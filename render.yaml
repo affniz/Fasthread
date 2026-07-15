@@ -1,0 +1,75 @@
+# Render Blueprint — deploys the whole stack:
+#   - a managed Postgres database
+#   - the FastAPI backend (runs `alembic upgrade head` on every deploy)
+#   - the React frontend as a static site
+#
+# Deploy: push this repo to GitHub, then in Render choose
+# "New +" → "Blueprint" and point it at the repo. After the first deploy,
+# set the two `sync: false` vars (VITE_API_URL and CORS_ORIGINS) to the
+# actual service URLs — see README.md → "Deploy to Render".
+
+databases:
+  - name: fasthread-db
+    databaseName: fasthread
+    user: fasthread
+    plan: free
+
+services:
+  # ---------- Backend API ----------
+  - type: web
+    name: fasthread-api
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_HOSTNAME
+        fromDatabase:
+          name: fasthread-db
+          property: host
+      - key: DATABASE_PORT
+        fromDatabase:
+          name: fasthread-db
+          property: port
+      - key: DATABASE_USERNAME
+        fromDatabase:
+          name: fasthread-db
+          property: user
+      - key: DATABASE_PASSWORD
+        fromDatabase:
+          name: fasthread-db
+          property: password
+      - key: DATABASE_NAME
+        fromDatabase:
+          name: fasthread-db
+          property: database
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      # Set to the frontend's URL after the first deploy, e.g.
+      # https://fasthread-web.onrender.com
+      - key: CORS_ORIGINS
+        sync: false
+
+  # ---------- Frontend (static site) ----------
+  - type: web
+    name: fasthread-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    # SPA fallback so client-side routes resolve to index.html
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Set to the API's URL after the first deploy, e.g.
+      # https://fasthread-api.onrender.com  (no trailing slash)
+      - key: VITE_API_URL
+        sync: false
